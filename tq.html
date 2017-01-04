@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Structure viewer</title>
+<script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.5.8/angular.min.js"></script>
+<script>
+var app=angular.module("viewer",[]);
+
+// TQ
+var crestRoot="https://crest-tq.eveonline.com/";
+var ssoUrl="https://login.eveonline.com/oauth/authorize";
+var ssoClient="24700340bf7449c0a06e885bb5351f35";
+var ssoRedirect="https://taabe.net/dev/projects/structureViewer/tq.html";
+
+app.controller("main",function($http) {
+	let token=window.location.hash.match(/access_token=(.+?)\&/);
+	if(token){
+		$http.defaults.headers.common.Authorization=`Bearer ${token[1]}`;
+		$http.get(crestRoot).
+		then(r=>$http.get(r.data.decode.href,{headers:{Accept:"application/vnd.ccp.eve.TokenDecode-v1+json"}})).
+		then(r=>$http.get(r.data.character.href,{headers:{Accept:"application/vnd.ccp.eve.Character-v4+json"}})).
+		then(r=>$http.get(r.data.corporation.href,{headers:{Accept:"application/vnd.ccp.eve.Corporation-v1+json"}})).
+		then(r=>$http.get(r.data.structures,{headers:{Accept:"application/vnd.ccp.eve.CorporationStructuresCollection-v1+json"}})).
+		then(r=>{this.structures=r.data.items});
+	}
+	else{
+		window.location=`${ssoUrl}?response_type=token&client_id=${ssoClient}&scope=corporationStructuresRead&redirect_uri=${ssoRedirect}`;
+	}
+	
+});
+</script>
+</head>
+<body ng-app="viewer" ng-controller="main as main" style="font-family:sans-serif;">
+<div ng-repeat="structure in main.structures">
+<h2>Structure #{{structure.id_str}} - {{structure.type.name}} in {{structure.solarSystem.name}}</h2>
+<p>Runs out of fuel: {{structure.fuelExpires || "N/A"}}</p>
+</div>
+</body>
+</html>
