@@ -3,29 +3,88 @@
 <head>
 <meta charset="UTF-8">
 <title>Structure viewer</title>
-<script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.5.8/angular.min.js"></script>
+<script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.6.6/angular.min.js"></script>
 <script>
-var app=angular.module("viewer",[]);
+const app=angular.module("viewer",[]);
 
 // SISI
-var crestRoot="https://api-sisi.testeveonline.com/";
-var ssoUrl="https://sisilogin.testeveonline.com/oauth/authorize";
-var ssoClient="b2e2ba92afe540839a378e30ff5e66eb";
-var ssoRedirect="https://taabe.net/dev/projects/structureViewer/sisi.html";
+const eveConf = {
+	crestRoot:"https://api-sisi.testeveonline.com",
+	esiRoot:"https://esi.tech.ccp.is",
+	esiDatasource:"singularity",
+	ssoRoot:"https://sisilogin.testeveonline.com",
+	ssoClient:"b2e2ba92afe540839a378e30ff5e66eb",
+	ssoScopes:["corporationStructuresRead","esi-universe.read_structures.v1","esi-corporations.read_structures.v1"],
+	ssoRedirect:"https://taabe.net/dev/projects/structureViewer/sisi.html"
+};
 
 app.controller("main",function($http) {
+	this.structures=[];
+	this.structureNames=new Map();
+	this.structureTypes=new Map();
+	this.structureGroups=new Map();
+	this.structureGroups.set(0,"");
+	
+	this.timeNow=Date.now();
+	this.timeRemaining=t=>{
+		let fueledForHours=(Date.parse(t+"Z")-this.timeNow)/(1000*3600);
+		let timeRemainingString="";
+		let localTimeString=new Date(t+"Z").toLocaleString();
+		
+		if(fueledForHours<0) timeRemainingString="Fuel has already expired!";
+		else if(fueledForHours<1) timeRemainingString="Fuel expires in less than an hour!";
+		else if(fueledForHours<48) timeRemainingString=`Fuel expires in ${Math.floor(fueledForHours)} hours.`;
+		else timeRemainingString=`Fuel expires in ${Math.floor(fueledForHours/24)} days.`;
+		
+		return `${timeRemainingString} (${localTimeString} local time)`;
+	};
+	
+	let get=(url,headers)=>$http.get(url,{headers:headers});
+
 	let token=window.location.hash.match(/access_token=(.+?)\&/);
-	if(token){
-		$http.defaults.headers.common.Authorization=`Bearer ${token[1]}`;
-		$http.get(crestRoot).
-		then(r=>$http.get(r.data.decode.href,{headers:{Accept:"application/vnd.ccp.eve.TokenDecode-v1+json"}})).
-		then(r=>$http.get(r.data.character.href,{headers:{Accept:"application/vnd.ccp.eve.Character-v4+json"}})).
-		then(r=>$http.get(r.data.corporation.href,{headers:{Accept:"application/vnd.ccp.eve.Corporation-v1+json"}})).
-		then(r=>$http.get(r.data.structures,{headers:{Accept:"application/vnd.ccp.eve.CorporationStructuresCollection-v1+json"}})).
-		then(r=>{this.structures=r.data.items});
+	if(!token){
+		window.location=`${eveConf.ssoRoot}/oauth/authorize?response_type=token&client_id=${eveConf.ssoClient}&scope=${eveConf.ssoScopes.join("%20")}&redirect_uri=${eveConf.ssoRedirect}`;
 	}
 	else{
-		window.location=`${ssoUrl}?response_type=token&client_id=${ssoClient}&scope=corporationStructuresRead&redirect_uri=${ssoRedirect}`;
+		let authHeaders={Authorization:`Bearer ${token[1]}`};
+		//ESI doesn't currently provide precise fuel expiry info: https://github.com/ccpgames/esi-issues/issues/516
+		//Still going to use CREST for now.
+		//let structureList=get(`${eveConf.esiRoot}/verify/?datasource=${eveConf.esiDatasource}`,authHeaders).
+		//then(r=>get(`${eveConf.esiRoot}/v4/characters/${r.data.CharacterID}/?datasource=${eveConf.esiDatasource}`)).
+		//then(r=>get(`${eveConf.esiRoot}/v1/corporations/${r.data.corporation_id}/structures/?datasource=${eveConf.esiDatasource}`,authHeaders));
+		let getStructureList=get(eveConf.crestRoot).
+		then(r=>get(r.data.decode.href,authHeaders)).
+		then(r=>get(r.data.character.href)).
+		then(r=>get(r.data.corporation.href)).
+		then(r=>get(r.data.structures,authHeaders));
+		
+		getStructureList.then(r=>{
+			r.data.items.forEach(structure=>{
+				this.structureNames.has(structure.id) || this.structureNames.set(structure.id,`Structure #${structure.id}`);
+				get(`${eveConf.esiRoot}/v1/universe/structures/${structure.id}/?datasource=${eveConf.esiDatasource}`,authHeaders).then(r=>{
+					this.structureNames.set(structure.id,r.data.name);
+				});
+			
+			});
+			r.data.items.forEach(structure=>{
+				if(!this.structureTypes.has(structure.type.id)){
+					this.structureTypes.set(structure.type.id,{name:"",size:0,group:0});
+					get(`${eveConf.esiRoot}/v3/universe/types/${structure.type.id}/?datasource=${eveConf.esiDatasource}`).then(r=>{
+						this.structureTypes.get(structure.type.id).name=r.data.name;
+						this.structureTypes.get(structure.type.id).size=r.data.dogma_attributes.find(e=>e.attribute_id==1547).value;
+						let group=r.data.group_id;
+						this.structureTypes.get(structure.type.id).group=group;
+						if(!this.structureGroups.has(group)){
+							this.structureGroups.set(group,"");
+							get(`${eveConf.esiRoot}/v1/universe/groups/${group}/?datasource=${eveConf.esiDatasource}`).then(r=>{
+								this.structureGroups.set(group,r.data.name);
+							});
+						}
+					});
+				}
+			});
+			this.structures=r.data.items;
+		});
 	}
 	
 });
@@ -33,8 +92,9 @@ app.controller("main",function($http) {
 </head>
 <body ng-app="viewer" ng-controller="main as main" style="font-family:sans-serif;">
 <div ng-repeat="structure in main.structures">
-<h2>Structure #{{structure.id_str}} - {{structure.type.name}} in {{structure.solarSystem.name}}</h2>
-<p>Runs out of fuel: {{structure.fuelExpires || "N/A"}}</p>
+<h2>{{main.structureNames.get(structure.id)}}</h2>
+<p>{{main.structureTypes.get(structure.type.id).name}} - {{["","Small","Medium","Large","Extra Large"][main.structureTypes.get(structure.type.id).size]}} {{main.structureGroups.get(main.structureTypes.get(structure.type.id).group)}}</p>
+<p>{{structure.fuelExpires?main.timeRemaining(structure.fuelExpires):"Fuel info N/A"}}</p>
 </div>
 </body>
 </html>
