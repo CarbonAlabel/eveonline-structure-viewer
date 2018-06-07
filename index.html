@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Structure viewer</title>
+<title>Structure Viewer</title>
 <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.6.10/angular.min.js"></script>
 <script>
 const app = angular.module("viewer", []);
@@ -64,7 +64,7 @@ app.controller("main", function ($http) {
         getStructureList.then(r => {
             r.data.forEach(structure => {
                 this.structureNames.has(structure.structure_id) || this.structureNames.set(structure.structure_id, `Structure #${structure.structure_id}`);
-                get(`${eveConf.esiRoot}/v1/universe/structures/${structure.structure_id}/?datasource=${datasource}`, authHeaders).then(r => {
+                get(`${eveConf.esiRoot}/v2/universe/structures/${structure.structure_id}/?datasource=${datasource}`, authHeaders).then(r => {
                     this.structureNames.set(structure.structure_id, r.data.name);
                 });
                 
