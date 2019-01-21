@@ -60,7 +60,7 @@ app.controller("main", function ($http) {
         
         let getStructureList = get(`${eveConf.esiRoot}/verify/?datasource=${datasource}`, authHeaders)
             .then(r => get(`${eveConf.esiRoot}/v4/characters/${r.data.CharacterID}/?datasource=${datasource}`))
-            .then(r => get(`${eveConf.esiRoot}/v2/corporations/${r.data.corporation_id}/structures/?datasource=${datasource}`, authHeaders));
+            .then(r => get(`${eveConf.esiRoot}/v3/corporations/${r.data.corporation_id}/structures/?datasource=${datasource}`, authHeaders));
         
         getStructureList.then(r => {
             r.data.forEach(structure => {
